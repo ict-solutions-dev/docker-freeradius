@@ -1,0 +1,54 @@
+services:
+  mariadb:
+    image: mariadb:lts
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: radius
+      MYSQL_USER: radius
+      MYSQL_PASSWORD: radpass
+    volumes:
+      - mariadb_data:/var/lib/mysql
+
+  freeradius:
+    image: ict-solutions-dev/freeradius:edge-latest
+    environment:
+      SQL_ENABLE: "true"
+      SQL_READ_ONLY: "true"
+      MYSQL_HOST: mariadb
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: radius
+      MYSQL_USER: radius
+      MYSQL_PASSWORD: radpass
+      # MYSQL_INIT: "true"
+      # STATUS_ENABLE: "true"
+      # STATUS_INTERFACE: "eth0"
+      # STATUS_CLIENT: "custom_admin"
+      # STATUS_SECRET: "custom_secret"
+      # DISABLE_PPP_VJ_COMPRESSION: "true"
+      # CUSTOM_MYSQL_QUERIES_POST_AUTH: "true"
+      # RADDEBUG_ENABLE: "true"
+      # COA_RELAY_ENABLE: "true"
+      # COA_RELAY_NAS_IP_1: "192.168.1.100"
+      # COA_RELAY_NAS_PORT_1: "3799"
+      # COA_RELAY_NAS_SECRET_1: "testing123"
+      CONTROL_ENABLE: "true"
+      CONTROL_PORT: 18120
+      CONTROL_TOKEN: "testing123"
+    volumes:
+      - freeradius_data:/data
+    ports:
+      - "1812:1812/udp"
+      - "1813:1813/udp"
+      - "18120:18120/tcp"
+    # Use this for default docker-compose (non-swarm)
+    cap_add:
+      - SYS_PTRACE
+    # Uncomment the following block and remove 'cap_add' above for Docker Swarm mode (docker stack deploy)
+    # deploy:
+    #   cap_add:
+    #     - SYS_PTRACE
+
+volumes:
+  mariadb_data:
+  freeradius_data:

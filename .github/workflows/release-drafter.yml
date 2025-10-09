@@ -1,0 +1,42 @@
+name: Release Drafter
+
+on:
+  push:
+    branches:
+      - develop
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - edited
+
+permissions:
+  contents: read
+
+jobs:
+  # TODO: Uncomment the following block to check the version of the project and publish release if version.txt was updated
+  # check-versions:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v2
+  #       with:
+  #         fetch-depth: 2
+  #     - name: Get version from file
+  #       id: get_version
+  #       run: echo "version=$(cat version.txt)" >> $GITHUB_OUTPUT
+  #     - uses: salsify/action-detect-and-tag-new-version@v2
+  #       with:
+  #         create-tag: false
+  #         version-command: |
+  #           echo "${{ steps.get_version.outputs.version }}"
+
+  update_release_draft:
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: release-drafter/release-drafter@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

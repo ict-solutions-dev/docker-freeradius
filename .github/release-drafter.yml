@@ -1,0 +1,93 @@
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+template: |
+  # What's Changed
+
+  $CHANGES
+
+  **Full Changelog**: https://github.com/$OWNER/$REPOSITORY/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
+
+categories:
+  - title: '🛑 Breaking Changes'
+    labels:
+      - 'breaking change'
+  - title: '🐛 Bug Fixes'
+    labels:
+      - 'bug'
+  - title: '✨ New Features'
+    labels:
+      - 'new feature'
+  - title: '⬆️ Enhancements'
+    labels:
+      - 'enhancement'
+  - title: '📦 Dependencies'
+    labels:
+      - 'dependencies'
+  - title: '🌍 Translations'
+    labels:
+      - 'lang'
+  - title: '♻️ Refactoring'
+    labels:
+      - 'refactor'
+
+change-template: '* $TITLE (#$NUMBER) @$AUTHOR'
+
+version-resolver:
+  major:
+    labels:
+      - 'breaking change'
+  minor:
+    labels:
+      - 'new feature'
+      - 'enhancement'
+  patch:
+    labels:
+      - 'bug'
+      - 'dependencies'
+      - 'lang'
+      - 'refactor'
+  default: patch
+
+exclude-labels:
+  - 'ignore-for-release'
+
+exclude-contributors:
+  - 'dependabot'
+
+autolabeler:
+  - label: 'chore'
+    files:
+      - '*.md'
+    branch:
+      - '/docs{0,1}\/.+/'
+    title:
+      - '/chore/i'
+  - label: 'bug'
+    branch:
+      - '/fix\/.+/'
+    title:
+      - '/fix/i'
+  - label: 'enhancement'
+    branch:
+      - '/feat\/.+/'
+    title:
+      - '/feat/i'
+  - label: 'refactor'
+    branch:
+      - '/refactor\/.+/'
+    title:
+      - '/refactor/i'
+  - label: 'lang'
+    branch:
+      - '/lang\/.+/'
+    title:
+      - '/lang/i'
+  - label: 'dependencies'
+    title:
+      - '/deps|dependencies/i'
+    branch:
+      - '/deps\/.+/'
+  - label: 'breaking change'
+    title:
+      - '/!:/i'
+      - '/BREAKING CHANGE/i'

@@ -1,0 +1,102 @@
+name: Docker Image Publish
+
+on:
+  push:
+    branches:
+      - develop
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Specific version to build (leave empty for all versions)'
+        required: false
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: freeradius
+
+jobs:
+  get-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      release_version: ${{ steps.version.outputs.release_version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Get version from tag
+        id: version
+        shell: bash
+        run: |
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            echo "release_version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "release_version=edge" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set matrix
+        id: set-matrix
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "matrix={\"FREERADIUS_VERSION\":[${{ github.event.inputs.version }}]}" >> "$GITHUB_OUTPUT"
+          else
+            VERSIONS=$(grep '^- ' SUPPORTED_VERSIONS.md | sed 's/- /"/;s/$/"/' | tr '\n' ',' | sed 's/,$//')
+            echo "matrix={\"FREERADIUS_VERSION\":[${VERSIONS}]}" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-push:
+    needs: get-versions
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{fromJson(needs.get-versions.outputs.matrix)}}
+      fail-fast: false
+    permissions:
+      packages: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare tags
+        id: prep
+        shell: bash
+        run: |
+          IMAGE_ID=ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME
+          IMAGE_ID=$(echo $IMAGE_ID | tr '[A-Z]' '[a-z]')
+          FULL_VERSION=${{ needs.get-versions.outputs.release_version }}-freeradius${{ matrix.FREERADIUS_VERSION }}
+          echo "tags=${IMAGE_ID}:${FULL_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.prep.outputs.tags }}
+          build-args: |
+            FREERADIUS_VERSION=${{ matrix.FREERADIUS_VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Job Summary
+        run: |
+          echo "### Build Complete 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "- Image: ${{ steps.prep.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "- FreeRADIUS Version: ${{ matrix.FREERADIUS_VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Release Version: ${{ needs.get-versions.outputs.release_version }}" >> $GITHUB_STEP_SUMMARY
