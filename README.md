@@ -183,8 +183,8 @@ SQL_ENABLE_RO_AUTH=true
 | `STATUS_ENABLE` | `false` | boolean | Enable status virtual server |
 | `STATUS_INTERFACE` | `eth0` | string | Interface for status server |
 | `STATUS_USE_ALL_INTERFACES` | `false` | boolean | Listen on all interfaces (0.0.0.0) |
-| `STATUS_CLIENT` | `exporter` | string | Status client name |
-| `STATUS_SECRET` | `adminsecret1` | string | Status client secret |
+| `STATUS_CLIENT` | `admin` | string | Status client name |
+| `STATUS_SECRET` | `adminsecret` | string | Status client secret |
 
 ### 🔄 CoA Relay Configuration
 
