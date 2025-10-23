@@ -182,6 +182,7 @@ SQL_ENABLE_RO_AUTH=true
 | `RADDEBUG_ENABLE` | `false` | boolean | Enable raddebug control socket |
 | `STATUS_ENABLE` | `false` | boolean | Enable status virtual server |
 | `STATUS_INTERFACE` | `eth0` | string | Interface for status server |
+| `STATUS_USE_ALL_INTERFACES` | `false` | boolean | Listen on all interfaces (0.0.0.0) |
 | `STATUS_CLIENT` | `exporter` | string | Status client name |
 | `STATUS_SECRET` | `adminsecret1` | string | Status client secret |
 
