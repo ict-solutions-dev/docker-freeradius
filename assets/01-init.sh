@@ -248,9 +248,16 @@ function init_freeradius {
 
         debug_log "Status Configuration: INTERFACE=$STATUS_INTERFACE, CLIENT=$STATUS_CLIENT, SECRET=$STATUS_SECRET"
 
-        # Get IP of the radius container
-        IP_STATUS=$(ifconfig "$STATUS_INTERFACE" | awk '/inet /{ print $2;}' | grep -v 'inet6' | head -n1)
-        debug_log "Detected IP for status page: $IP_STATUS"
+        # Check if STATUS_USE_ALL_INTERFACES is set to true
+        if [ "$STATUS_USE_ALL_INTERFACES" == true ]; then
+            IP_STATUS="0.0.0.0"
+            debug_log "Setting the status page to listen on all interfaces (0.0.0.0)"
+        else
+            # Get IP of the radius container
+            IP_STATUS=$(ifconfig "$STATUS_INTERFACE" | awk '/inet /{ print $2;}' | grep -v 'inet6' | head -n1)
+            debug_log "Detected IP for status page: $IP_STATUS"
+        fi
+
         log_info "Setting the status page for IP $IP_STATUS"
 
         # Only run sed if variables are not empty
