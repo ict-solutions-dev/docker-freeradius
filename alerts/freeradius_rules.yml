@@ -1,0 +1,92 @@
+groups:
+  - name: FreeRadius
+    rules:
+      - alert: FreeRADIUSDown
+        expr: freeradius_up == 0
+        for: 30s
+        labels:
+          severity: critical
+          service: freeradius
+        annotations:
+          summary: "FreeRADIUS service is down"
+          description: "FreeRADIUS instance {{ $labels.instance }} has been down for more than 30 seconds"
+
+      - alert: FreeRADIUSRestarted
+        expr: changes(freeradius_start_time[5m]) > 0
+        for: 0s
+        labels:
+          severity: warning
+          service: freeradius
+        annotations:
+          summary: "FreeRADIUS service restarted"
+          description: "FreeRADIUS instance {{ $labels.instance }} has restarted"
+
+      - alert: FreeRADIUSHighAuthDroppedRequests
+        expr: rate(freeradius_total_auth_dropped_requests[5m]) > 1
+        for: 2m
+        labels:
+          severity: warning
+          service: freeradius
+        annotations:
+          summary: "High FreeRADIUS auth dropped requests rate"
+          description: "Auth dropped requests rate is {{ $value | humanize }} req/s on instance {{ $labels.instance }}"
+
+      - alert: FreeRADIUSHighAcctDroppedRequests
+        expr: rate(freeradius_total_acct_dropped_requests[5m]) > 1
+        for: 2m
+        labels:
+          severity: warning
+          service: freeradius
+        annotations:
+          summary: "High FreeRADIUS accounting dropped requests rate"
+          description: "Accounting dropped requests rate is {{ $value | humanize }} req/s on instance {{ $labels.instance }}"
+
+      - alert: FreeRADIUSHighInvalidRequests
+        expr: (rate(freeradius_total_auth_invalid_requests[5m]) + rate(freeradius_total_acct_invalid_requests[5m])) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+          service: freeradius
+        annotations:
+          summary: "High FreeRADIUS invalid requests rate"
+          description: "Invalid requests rate is {{ $value | humanize }} req/s on instance {{ $labels.instance }}"
+
+      - alert: FreeRADIUSHighMalformedRequests
+        expr: (rate(freeradius_total_auth_malformed_requests[5m]) + rate(freeradius_total_acct_malformed_requests[5m])) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+          service: freeradius
+        annotations:
+          summary: "High FreeRADIUS malformed requests rate"
+          description: "Malformed requests rate is {{ $value | humanize }} req/s on instance {{ $labels.instance }}"
+
+      - alert: FreeRADIUSHighAuthRejectRate
+        expr: (rate(freeradius_total_access_rejects[5m]) / rate(freeradius_total_access_requests[5m])) * 100 > 20
+        for: 5m
+        labels:
+          severity: warning
+          service: freeradius
+        annotations:
+          summary: "High FreeRADIUS authentication reject rate"
+          description: "Authentication reject rate is {{ $value | humanize }}% on instance {{ $labels.instance }}"
+
+      - alert: FreeRADIUSLowAuthSuccessRate
+        expr: (rate(freeradius_total_access_accepts[5m]) / rate(freeradius_total_access_requests[5m])) * 100 < 70
+        for: 5m
+        labels:
+          severity: warning
+          service: freeradius
+        annotations:
+          summary: "Low FreeRADIUS authentication success rate"
+          description: "Authentication success rate is {{ $value | humanize }}% on instance {{ $labels.instance }}"
+
+      - alert: FreeRADIUSStatsError
+        expr: freeradius_stats_error == 1
+        for: 1m
+        labels:
+          severity: critical
+          service: freeradius
+        annotations:
+          summary: "FreeRADIUS stats collection error"
+          description: "FreeRADIUS stats collection is reporting errors on instance {{ $labels.instance }}"
