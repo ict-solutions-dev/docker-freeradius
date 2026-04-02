@@ -416,71 +416,6 @@ echo "home_server_pool coa-nas$i {
         log_success "Control socket configuration completed. You can now use 'raddebug' for debugging."
     fi
 
-    # Enable custom post-auth queries
-    if [ "$CUSTOM_MYSQL_QUERIES_POST_AUTH" == true ]; then
-        log_info "Enabling custom MySQL post-auth queries..."
-
-        # Check and add missing columns to postauth table if SQL is enabled
-        if [ "$SQL_ENABLE" = true ] && [ -n "$MYSQL_HOST" ]; then
-            log_info "Checking postauth table schema..."
-
-            # Check if reply_message column exists
-            REPLY_MESSAGE_EXISTS=$(mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" -e "SHOW COLUMNS FROM radpostauth LIKE 'reply_message';" | wc -l)
-            if [ "$REPLY_MESSAGE_EXISTS" -eq 0 ]; then
-                log_config "Adding reply_message column to radpostauth table..."
-                mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" -e "ALTER TABLE radpostauth ADD COLUMN reply_message varchar(253) default '';"
-            fi
-
-            # Check if nasipaddress column exists
-            NASIP_EXISTS=$(mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" -e "SHOW COLUMNS FROM radpostauth LIKE 'nasipaddress';" | wc -l)
-            if [ "$NASIP_EXISTS" -eq 0 ]; then
-                log_config "Adding nasipaddress column to radpostauth table..."
-                mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" -e "ALTER TABLE radpostauth ADD COLUMN nasipaddress varchar(15) default '';"
-            fi
-
-            log_success "Postauth table schema validation completed."
-        fi
-
-        # Create temporary file with the new post-auth block
-        cat > /tmp/new_postauth.txt << 'EOF'
-post-auth {
-        # Write SQL queries to a logfile. This is potentially useful for bulk inserts
-        # when used with the rlm_sql_null driver.
-#       logfile = ${logdir}/post-auth.sql
-
-        query = "\
-                INSERT INTO ${..postauth_table} \
-                        (username, pass, reply, reply_message, nasipaddress, authdate ${..class.column_name}) \
-                VALUES ( \
-                        '%{SQL-User-Name}', \
-                        '%{%{User-Password}:-%{Chap-Password}}', \
-                        '%{reply:Packet-Type}', \
-                        '%{reply:Reply-Message}', \
-                        '%{NAS-IP-Address}', \
-                        '%S.%M' \
-                        ${..class.reply_xlat})"
-}
-EOF
-
-        # Use awk to replace the post-auth block
-        awk '
-        /^post-auth \{/ {
-            # Skip until closing brace
-            while (getline > 0 && !/^}/) continue
-            # Insert new post-auth block
-            while ((getline line < "/tmp/new_postauth.txt") > 0) print line
-            close("/tmp/new_postauth.txt")
-            next
-        }
-        { print }
-        ' $RADIUS_PATH/mods-config/sql/main/mysql/queries.conf > /tmp/queries_new.conf
-
-        mv /tmp/queries_new.conf $RADIUS_PATH/mods-config/sql/main/mysql/queries.conf
-        rm -f /tmp/new_postauth.txt
-
-        log_success "Custom MySQL post-auth queries configuration completed."
-    fi
-
     if [ "$EAP_USE_TUNNELED_REPLY" == true ]; then
         # Enable used tunnel for unifi
         sed -i 's|use_tunneled_reply = no|use_tunneled_reply = yes|' $RADIUS_PATH/mods-available/eap
@@ -543,6 +478,44 @@ if [ "$SQL_ENABLE" = true ] && [ -n "$MYSQL_HOST" ]; then
     fi
 fi
 
+# Ensure postauth table schema is up-to-date (runs on every start, safe to re-run)
+if [ "$CUSTOM_MYSQL_QUERIES_POST_AUTH" == true ] && [ "$SQL_ENABLE" = true ] && [ -n "$MYSQL_HOST" ]; then
+    log_info "Checking postauth table schema..."
+
+    # Check if reply_message column exists
+    REPLY_MESSAGE_EXISTS=$(mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" -e "SHOW COLUMNS FROM radpostauth LIKE 'reply_message';" | wc -l)
+    if [ "$REPLY_MESSAGE_EXISTS" -eq 0 ]; then
+        log_config "Adding reply_message column to radpostauth table..."
+        mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" -e "ALTER TABLE radpostauth ADD COLUMN reply_message varchar(253) default '';"
+    fi
+
+    # Check if nasipaddress column exists
+    NASIP_EXISTS=$(mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" -e "SHOW COLUMNS FROM radpostauth LIKE 'nasipaddress';" | wc -l)
+    if [ "$NASIP_EXISTS" -eq 0 ]; then
+        log_config "Adding nasipaddress column to radpostauth table..."
+        mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" -e "ALTER TABLE radpostauth ADD COLUMN nasipaddress varchar(15) default '';"
+    fi
+
+    # Add extended columns if CUSTOM_MYSQL_QUERIES_POST_AUTH_EXTENDED is enabled
+    if [ "$CUSTOM_MYSQL_QUERIES_POST_AUTH_EXTENDED" == true ]; then
+        # Check if callingstationid column exists
+        CALLING_EXISTS=$(mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" -e "SHOW COLUMNS FROM radpostauth LIKE 'callingstationid';" | wc -l)
+        if [ "$CALLING_EXISTS" -eq 0 ]; then
+            log_config "Adding callingstationid column to radpostauth table..."
+            mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" -e "ALTER TABLE radpostauth ADD COLUMN callingstationid varchar(50) default '';"
+        fi
+
+        # Check if calledstationid column exists
+        CALLED_EXISTS=$(mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" -e "SHOW COLUMNS FROM radpostauth LIKE 'calledstationid';" | wc -l)
+        if [ "$CALLED_EXISTS" -eq 0 ]; then
+            log_config "Adding calledstationid column to radpostauth table..."
+            mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" -e "ALTER TABLE radpostauth ADD COLUMN calledstationid varchar(50) default '';"
+        fi
+    fi
+
+    log_success "Postauth table schema validation completed."
+fi
+
 INIT_LOCK=/internal_data/.init_done
 
 if test -f "$INIT_LOCK"; then
@@ -550,6 +523,74 @@ if test -f "$INIT_LOCK"; then
 else
 	init_freeradius
 	date > $INIT_LOCK
+fi
+
+# Apply custom post-auth queries on every start (not locked by init)
+if [ "$CUSTOM_MYSQL_QUERIES_POST_AUTH" == true ] && [ "$SQL_ENABLE" = true ]; then
+    log_info "Applying custom MySQL post-auth queries..."
+
+    # Create temporary file with the new post-auth block
+    if [ "$CUSTOM_MYSQL_QUERIES_POST_AUTH_EXTENDED" == true ]; then
+        cat > /tmp/new_postauth.txt << 'EOF'
+post-auth {
+        # Write SQL queries to a logfile. This is potentially useful for bulk inserts
+        # when used with the rlm_sql_null driver.
+#       logfile = ${logdir}/post-auth.sql
+
+        query = "\
+                INSERT INTO ${..postauth_table} \
+                        (username, pass, reply, reply_message, nasipaddress, callingstationid, calledstationid, authdate ${..class.column_name}) \
+                VALUES ( \
+                        '%{SQL-User-Name}', \
+                        '%{%{User-Password}:-%{Chap-Password}}', \
+                        '%{reply:Packet-Type}', \
+                        '%{reply:Reply-Message}', \
+                        '%{NAS-IP-Address}', \
+                        '%{Calling-Station-Id}', \
+                        '%{Called-Station-Id}', \
+                        '%S.%M' \
+                        ${..class.reply_xlat})"
+}
+EOF
+    else
+        cat > /tmp/new_postauth.txt << 'EOF'
+post-auth {
+        # Write SQL queries to a logfile. This is potentially useful for bulk inserts
+        # when used with the rlm_sql_null driver.
+#       logfile = ${logdir}/post-auth.sql
+
+        query = "\
+                INSERT INTO ${..postauth_table} \
+                        (username, pass, reply, reply_message, nasipaddress, authdate ${..class.column_name}) \
+                VALUES ( \
+                        '%{SQL-User-Name}', \
+                        '%{%{User-Password}:-%{Chap-Password}}', \
+                        '%{reply:Packet-Type}', \
+                        '%{reply:Reply-Message}', \
+                        '%{NAS-IP-Address}', \
+                        '%S.%M' \
+                        ${..class.reply_xlat})"
+}
+EOF
+    fi
+
+    # Use awk to replace the post-auth block
+    awk '
+    /^post-auth \{/ {
+        # Skip until closing brace
+        while (getline > 0 && !/^}/) continue
+        # Insert new post-auth block
+        while ((getline line < "/tmp/new_postauth.txt") > 0) print line
+        close("/tmp/new_postauth.txt")
+        next
+    }
+    { print }
+    ' $RADIUS_PATH/mods-config/sql/main/mysql/queries.conf > /tmp/queries_new.conf
+
+    mv /tmp/queries_new.conf $RADIUS_PATH/mods-config/sql/main/mysql/queries.conf
+    rm -f /tmp/new_postauth.txt
+
+    log_success "Custom MySQL post-auth queries configuration completed."
 fi
 
 if [ "$CONTROL_ENABLE" == true ]; then
