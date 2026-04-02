@@ -18,6 +18,7 @@ FreeRADIUS Docker container based on **Ubuntu 22.04.5 LTS**, specifically optimi
 - [🗄️ Database Configuration](#️-database-configuration)
 - [📊 Status Server](#-status-server)
 - [🔄 CoA Relay](#-coa-relay)
+- [🛡️ Auth Reject Logging (fail2ban)](#️-auth-reject-logging-fail2ban-integration)
 - [🛠️ Debugging](#️-debugging)
 - [📝 Examples](#-examples)
 
@@ -166,6 +167,9 @@ SQL_ENABLE_RO_AUTH=true
 | `SQL_ENABLE_RO_AUTH` | `false` | boolean | Use sql_ro for authorize section |
 | `SQL_IPPOOL_ENABLE` | `false` | boolean | Enable sqlippool module |
 | `CUSTOM_MYSQL_QUERIES_POST_AUTH` | `false` | boolean | Enable custom post-auth SQL queries |
+| `CUSTOM_MYSQL_QUERIES_POST_AUTH_EXTENDED` | `false` | boolean | Add Calling/Called-Station-Id to post-auth logging |
+| `AUTH_REJECT_LOG` | `false` | boolean | Enable auth reject file logging for fail2ban |
+| `AUTH_REJECT_LOG_PATH` | `/var/log/freeradius/auth-reject.log` | string | Auth reject log file path |
 
 ### 🔧 Client Management
 
@@ -480,20 +484,135 @@ DEFAULT Framed-Protocol == PPP
 
 Extend the MySQL schema for enhanced logging:
 
-1. **Database Schema Update:**
-```sql
-ALTER TABLE radpostauth
-    ADD COLUMN reply_message varchar(255) DEFAULT NULL AFTER reply,
-    ADD COLUMN nasipaddress varchar(15) DEFAULT NULL AFTER reply_message;
-```
-
-2. **Enable Custom Queries:**
 ```bash
 CUSTOM_MYSQL_QUERIES_POST_AUTH=true
 ```
 
 > [!INFO]
-> This automatically updates the query configuration to include Reply-Message and NAS-IP-Address in post-auth logging.
+> This automatically adds `reply_message` and `nasipaddress` columns to the `radpostauth` table and updates the query configuration. Schema migrations run on every container start (safe to re-run).
+
+#### 🔍 Extended Post-Auth Logging
+
+Log `Calling-Station-Id` (client IP) and `Called-Station-Id` (gateway IP) for VPN/AnyConnect environments:
+
+```bash
+CUSTOM_MYSQL_QUERIES_POST_AUTH=true
+CUSTOM_MYSQL_QUERIES_POST_AUTH_EXTENDED=true
+```
+
+This adds `callingstationid` and `calledstationid` columns to the `radpostauth` table. Toggle on/off without deleting the init lock — query configuration is applied on every container start.
+
+| Variable | Default | Type | Description |
+|----------|---------|------|-------------|
+| `CUSTOM_MYSQL_QUERIES_POST_AUTH` | `false` | boolean | Enable custom post-auth queries (reply_message, nasipaddress) |
+| `CUSTOM_MYSQL_QUERIES_POST_AUTH_EXTENDED` | `false` | boolean | Add Calling-Station-Id and Called-Station-Id logging |
+
+---
+
+### 🛡️ Auth Reject Logging (fail2ban Integration)
+
+Log `Access-Reject` events to a file for consumption by fail2ban on the host VM. This enables automatic IP blocking of brute force attackers via iptables/nftables.
+
+```bash
+AUTH_REJECT_LOG=true
+```
+
+| Variable | Default | Type | Description |
+|----------|---------|------|-------------|
+| `AUTH_REJECT_LOG` | `false` | boolean | Enable auth reject file logging |
+| `AUTH_REJECT_LOG_PATH` | `/var/log/freeradius/auth-reject.log` | string | Log file path |
+
+> [!NOTE]
+> Only requests with a `Calling-Station-Id` attribute are logged. Internal requests without a client IP are skipped.
+
+**Log format:**
+```
+2026-04-02 10:06:44 : Auth-Reject : user=admin calling-station-id=1.2.3.4 called-station-id=10.0.0.1
+```
+
+#### 🔧 Docker Swarm Setup
+
+Add a named volume in your stack compose for the FreeRADIUS service:
+
+```yaml
+services:
+  freeradius:
+    environment:
+      AUTH_REJECT_LOG: "true"
+    volumes:
+      - freeradius_auth_logs:/var/log/freeradius
+
+volumes:
+  freeradius_auth_logs:
+    driver: local
+```
+
+Find the volume path on the host VM:
+
+```bash
+docker volume inspect <stack>_freeradius_auth_logs --format '{{.Mountpoint}}'
+# Example output: /var/lib/docker/volumes/radius_auth_freeradius_auth_logs/_data
+```
+
+#### 🔧 fail2ban Configuration
+
+Install fail2ban on the host VM:
+
+```bash
+apt install fail2ban
+```
+
+**Filter** — `/etc/fail2ban/filter.d/freeradius-reject.conf`:
+
+```ini
+[Definition]
+failregex = ^.* : Auth-Reject : user=.* calling-station-id=<HOST> called-station-id=.*$
+ignoreregex =
+```
+
+**Jail** — `/etc/fail2ban/jail.d/freeradius-reject.conf`:
+
+```ini
+[freeradius-reject]
+enabled = true
+filter = freeradius-reject
+logpath = /var/lib/docker/volumes/<stack>_freeradius_auth_logs/_data/auth-reject.log
+banaction = nftables[type=allports]
+maxretry = 5
+findtime = 600
+bantime = 3600
+```
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `maxretry` | `5` | Block after 5 failed attempts |
+| `findtime` | `600` | Within a 10-minute window |
+| `bantime` | `3600` | Ban for 1 hour |
+
+```bash
+systemctl restart fail2ban
+fail2ban-client status freeradius-reject
+```
+
+#### 📊 fail2ban Monitoring (Prometheus + Grafana)
+
+Use [fail2ban-prometheus-exporter](https://github.com/hectorjsmith/fail2ban-prometheus-exporter) to expose metrics:
+
+```bash
+# Install and run on the host VM
+./fail2ban-prometheus-exporter --web.listen-address=":9191"
+```
+
+Add to your Prometheus scrape config:
+
+```yaml
+scrape_configs:
+  - job_name: fail2ban
+    static_configs:
+      - targets: ['<vm-ip>:9191']
+```
+
+A ready-made Grafana dashboard is available at [Grafana Dashboard #17580](https://grafana.com/grafana/dashboards/17580).
 
 ---
 
