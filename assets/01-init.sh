@@ -552,6 +552,34 @@ else
 	date > $INIT_LOCK
 fi
 
+# Reject unknown users early in authorize section (runs on every start)
+if [ "$REJECT_UNKNOWN_USERS" == true ]; then
+    log_info "Enabling rejection of unknown users in authorize section..."
+
+    # Check if the reject block is already present to avoid duplicates
+    if ! grep -q "# Reject unknown users" "$RADIUS_PATH/sites-available/default"; then
+        # Insert reject block after first -sql (in authorize section only)
+        awk '
+        /^[[:space:]]*-sql[[:space:]]*$/ && !done {
+            print
+            print ""
+            print "\t# Reject unknown users - if SQL did not find the user, reject and log it"
+            print "\tif (!control:Cleartext-Password) {"
+            print "\t\tupdate control {"
+            print "\t\t\tAuth-Type := Reject"
+            print "\t\t}"
+            print "\t}"
+            done=1
+            next
+        }
+        { print }
+        ' "$RADIUS_PATH/sites-available/default" > /tmp/default_new.conf
+        mv /tmp/default_new.conf "$RADIUS_PATH/sites-available/default"
+    fi
+
+    log_success "Unknown users will be rejected before authentication."
+fi
+
 if [ "$CONTROL_ENABLE" == true ]; then
     log_info "Control server is enabled. Starting control server..."
 
