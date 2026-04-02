@@ -593,6 +593,48 @@ EOF
     log_success "Custom MySQL post-auth queries configuration completed."
 fi
 
+# Enable auth reject logging for fail2ban integration (runs on every start)
+if [ "$AUTH_REJECT_LOG" == true ]; then
+    AUTH_REJECT_LOG_PATH="${AUTH_REJECT_LOG_PATH:-/var/log/freeradius/auth-reject.log}"
+
+    log_info "Enabling auth reject logging to $AUTH_REJECT_LOG_PATH..."
+
+    # Create linelog module for auth reject logging
+    cat > "$RADIUS_PATH/mods-available/linelog_auth_reject" << LEOF
+linelog linelog_auth_reject {
+    filename = $AUTH_REJECT_LOG_PATH
+    permissions = 0600
+    format = "%S : Auth-Reject : user=%{User-Name} calling-station-id=%{Calling-Station-Id} called-station-id=%{Called-Station-Id}"
+}
+LEOF
+
+    # Enable linelog module
+    ln -sf "$RADIUS_PATH/mods-available/linelog_auth_reject" "$RADIUS_PATH/mods-enabled/linelog_auth_reject"
+
+    # Ensure log file exists with proper permissions
+    touch "$AUTH_REJECT_LOG_PATH"
+    chown freerad:freerad "$AUTH_REJECT_LOG_PATH"
+
+    # Add linelog_auth_reject to Post-Auth-Type REJECT section (only log if Calling-Station-Id is present)
+    if ! grep -q "linelog_auth_reject" "$RADIUS_PATH/sites-available/default"; then
+        awk '
+        /Post-Auth-Type REJECT \{/ && !done {
+            print
+            print "\t\t# Log reject only if Calling-Station-Id is present (for fail2ban)"
+            print "\t\tif (&Calling-Station-Id && &Calling-Station-Id != \"\") {"
+            print "\t\t\tlinelog_auth_reject"
+            print "\t\t}"
+            done=1
+            next
+        }
+        { print }
+        ' "$RADIUS_PATH/sites-available/default" > /tmp/default_new.conf
+        mv /tmp/default_new.conf "$RADIUS_PATH/sites-available/default"
+    fi
+
+    log_success "Auth reject logging enabled. Configure fail2ban to read $AUTH_REJECT_LOG_PATH"
+fi
+
 if [ "$CONTROL_ENABLE" == true ]; then
     log_info "Control server is enabled. Starting control server..."
 
